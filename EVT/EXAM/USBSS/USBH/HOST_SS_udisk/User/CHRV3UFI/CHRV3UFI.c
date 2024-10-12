@@ -8,25 +8,26 @@
 * SPDX-License-Identifier: Apache-2.0
 *******************************************************************************/
 
-/* CHRV3 U盘主机文件系统接口, 支持: FAT12/FAT16/FAT32 */
+/* CHRV3 USB host file system interface, supports: FAT12/FAT16/FAT32 */
 
-//#define DISK_BASE_BUF_LEN		512	/* 默认的磁盘数据缓冲区大小为512字节(可以选择为2048甚至4096以支持某些大扇区的U盘),为0则禁止在本文件中定义缓冲区并由应用程序在pDISK_BASE_BUF中指定 */
-/* 如果需要复用磁盘数据缓冲区以节约RAM,那么可将DISK_BASE_BUF_LEN定义为0以禁止在本文件中定义缓冲区,而由应用程序在调用CHRV3LibInit之前将与其它程序合用的缓冲区起始地址置入pDISK_BASE_BUF变量 */
+//#define DISK_BASE_BUF_LEN  512  /* The default cache size for FAT data is 512 bytes (can be set to 2048 or up to 4096 to support some large-sector USB drives). If set to 0, caching in this file will be disabled, and the application program should specify the buffer using pDISK_BASE_BUF */
 
-//#define NO_DEFAULT_ACCESS_SECTOR	1		/* 禁止默认的磁盘扇区读写子程序,下面用自行编写的程序代替它 */
-//#define NO_DEFAULT_DISK_CONNECT		1		/* 禁止默认的检查磁盘连接子程序,下面用自行编写的程序代替它 */
-//#define NO_DEFAULT_FILE_ENUMER		1		/* 禁止默认的文件名枚举回调程序,下面用自行编写的程序代替它 */
+/* If you need to reuse the FAT data cache to save RAM, you can define DISK_BASE_BUF_LEN as 0 to disable caching in this file, and the application program should assign the starting address of the cache shared with other programs to the variable pDISK_BASE_BUF before calling CHRV3LibInit */
+
+//#define NO_DEFAULT_ACCESS_SECTOR  1   /* Disable the default sector read/write routines, and replace them with custom code below */
+//#define NO_DEFAULT_DISK_CONNECT   1   /* Disable the default disk connection detection routine, and replace it with custom code below */
+//#define NO_DEFAULT_FILE_ENUMER    1   /* Disable the default file enumeration callback routine, and replace it with custom code below */
 
 //#include "CHRV3SFR.H"
 #include "CH56xSFR.h"
 #include "CHRV3UFI.h"
 #include "Ch56x_UDISK.h"
 
-CMD_PARAM_I	mCmdParam;						/* 命令参数 */
-#if		DISK_BASE_BUF_LEN > 0
-//UINT8	DISK_BASE_BUF[ DISK_BASE_BUF_LEN ] __attribute__((at(BA_RAM+SZ_RAM/2)));	/* 外部RAM的磁盘数据缓冲区,缓冲区长度为一个扇区的长度 */
-UINT8	DISK_BASE_BUF[ DISK_BASE_BUF_LEN ] __attribute__((aligned (4)));	/* 外部RAM的磁盘数据缓冲区,缓冲区长度为一个扇区的长度 */
-//UINT8	DISK_FAT_BUF[ DISK_BASE_BUF_LEN ] __attribute__((aligned (4)));	/* 外部RAM的磁盘FAT数据缓冲区,缓冲区长度为一个扇区的长度 */
+CMD_PARAM_I mCmdParam;                     /* Command parameters */
+#if     DISK_BASE_BUF_LEN > 0
+//UINT8  DISK_BASE_BUF[ DISK_BASE_BUF_LEN ] __attribute__((at(BA_RAM+SZ_RAM/2)));    /* External RAM's FAT data cache area, the length of the cache area is the size of one sector */
+UINT8  DISK_BASE_BUF[ DISK_BASE_BUF_LEN ] __attribute__((aligned (4)));    /* External RAM's FAT data cache area, the length of the cache area is the size of one sector */
+//UINT8  DISK_FAT_BUF[ DISK_BASE_BUF_LEN ] __attribute__((aligned (4)));    /* External RAM's FAT data cache area, the length of the cache area is the size of one sector */
 #endif
 
 UINT8	HostCtrlTransfer( PUINT8 DataBuf, PUINT8 RetLen )
@@ -53,13 +54,13 @@ UINT8	CtrlSetUsbConfig( UINT8 cfg )
 ////	return MS_ScsiCmd_Process( DataBuf );
 //}
 
-/* 以下程序可以根据需要修改 */
+/* The following code can be modified as needed */
 
-#ifndef	NO_DEFAULT_ACCESS_SECTOR		/* 在应用程序中定义NO_DEFAULT_ACCESS_SECTOR可以禁止默认的磁盘扇区读写子程序,然后用自行编写的程序代替它 */
-//if ( use_external_interface ) {  // 替换U盘扇区底层读写子程序
-//    CHRV3vSectorSize=512;  // 设置实际的扇区大小,必须是512的倍数,该值是磁盘的扇区大小
-//    CHRV3vSectorSizeB=9;   // 设置实际的扇区大小的位移数,512则对应9,1024对应10,2048对应11
-//    CHRV3DiskStatus=DISK_MOUNTED;  // 强制块设备连接成功(只差分析文件系统)
+#ifndef NO_DEFAULT_ACCESS_SECTOR    /* Defining NO_DEFAULT_ACCESS_SECTOR in the application program can disable the default sector read/write routines, and then use custom code to replace them */
+//if ( use_external_interface ) {  // Replace with custom USB disk sector read/write routines
+//    CHRV3vSectorSize=512;  // Set the actual sector size, which must be a multiple of 512, and this value is the sector size of the disk
+//    CHRV3vSectorSizeB=9;   // Set the bit shift value for the actual sector size, 512 corresponds to 9, 1024 corresponds to 10, and 2048 corresponds to 11
+//    CHRV3DiskStatus=DISK_MOUNTED;  // Manually set the device connection status as successful (just short of fully resolving the file system)
 //}
 
 UINT8	CHRV3ReadSector( UINT8 SectCount, PUINT8 DataBuf )  /* 从磁盘读取多个扇区的数据到缓冲区中 */
@@ -283,10 +284,10 @@ UINT8	CHRV3LibInit( void )  /* 初始化CHRV3程序库,操作成功返回0 */
 {
 	if ( CHRV3GetVer( ) < CHRV3_LIB_VER ) return( 0xFF );  /* 获取当前子程序库的版本号,版本太低则返回错误 */
 #if		DISK_BASE_BUF_LEN > 0
-	pDISK_BASE_BUF = & DISK_BASE_BUF[0];  /* 指向外部RAM的磁盘数据缓冲区 */
-	pDISK_FAT_BUF = & DISK_BASE_BUF[0];  /* 指向外部RAM的磁盘FAT数据缓冲区,可以与pDISK_BASE_BUF合用以节约RAM */
-//	pDISK_FAT_BUF = & DISK_FAT_BUF[0];  /* 指向外部RAM的磁盘FAT数据缓冲区,独立于pDISK_BASE_BUF以提高速度 */
-/* 如果希望提高文件存取速度,那么可以在主程序中调用CHRV3LibInit之后,将pDISK_FAT_BUF重新指向另一个独立分配的与pDISK_BASE_BUF同样大小的缓冲区 */
+	pDISK_BASE_BUF = & DISK_BASE_BUF[0];  /* Points to the external RAM's cache data area */
+	pDISK_FAT_BUF = & DISK_BASE_BUF[0];  /* Points to the external RAM's FAT data cache area, can be used together with pDISK_BASE_BUF to estimate RAM */
+//	pDISK_FAT_BUF = & DISK_FAT_BUF[0];  /* Points to the external RAM's FAT data cache area, independent of pDISK_BASE_BUF to improve speed */
+/* If you want to improve file access speed, you can call CHRV3LibInit in the main program and reassign pDISK_FAT_BUF to another independently allocated cache area of the same size as pDISK_BASE_BUF */
 #endif
 	CHRV3DiskStatus = DISK_UNKNOWN;  /* 未知状态 */
 	CHRV3vSectorSizeB = 9;  /* 默认的物理磁盘的扇区是512B */

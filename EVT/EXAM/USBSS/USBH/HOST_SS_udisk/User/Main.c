@@ -29,6 +29,7 @@ UINT8V U30_Check_Time = 0;
 volatile DevInfo g_DevInfo;
 
 __attribute__ ((aligned(16))) UINT8 pNTFS_BUF[512] __attribute__((section(".DMADATA")));
+__attribute__ ((aligned(16))) UINT8 pDataBuf[8192] __attribute__((section(".DMADATA")));
 
 __attribute__ ((aligned(4))) UINT8  RxBuffer[1] ;      // IN, must even address
 __attribute__ ((aligned(4))) UINT8  TxBuffer[1] ;      // OUT, must even address
@@ -103,11 +104,13 @@ int main( void )
     DebugInit(115200);
     PRINT("\n\nThis is USB3.0 host program\n");
 
+    PFIC_EnableIRQ(USBSS_IRQn); // ANDAX
     PFIC_EnableIRQ(LINK_IRQn);           //enable USBSSH LINK global interrupt
     USB20Host_Init(ENABLE);              //USB2.0initialization
     TMR0_TimerInit(FREQ_SYS);            //3.0link timeout timer initialization
     TMR0_ITCfg( ENABLE ,RB_TMR_IE_CYC_END);
     PFIC_EnableIRQ( TMR0_IRQn );
+
     while(1)
     {
        mDelayuS(2);
@@ -116,7 +119,7 @@ int main( void )
            if( gDeviceUsbType == USB_U30_SPEED )
            {
                printf("U30HOST_Enumerate\n");
-               mDelaymS(5);
+               mDelaymS(50);
                USB30Host_Enum();
            }
            else
@@ -134,7 +137,43 @@ int main( void )
            printf("udisk_init=%02x\n",s);
            if( s == USB_OPERATE_SUCCESS )
            {
-               s = Fat_Init();
+        	   // Test reading a raw sector:
+        	   uint32_t StartLba = 100000000;
+        	   uint16_t SectCount = 1;
+
+        	   s = MS_ReadSector( StartLba, SectCount, pDataBuf );
+
+        	   printf("MS_ReadSector=%02x (%s)\n", s, pDataBuf);
+
+
+        	   StartLba++;
+        	   SectCount = 16;
+#if 1
+        	   for (int c = 256; c < 8192; c++)
+        	   {
+        		   pDataBuf[c] = /*255 -*/ (c % 256);
+        	   }
+#endif
+        	   R32_TMR1_CNT_END = 0xffffffff;
+        	   R8_TMR1_CTRL_MOD = RB_TMR_ALL_CLEAR;
+        	   R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN | RB_TMR_CAP_COUNT;
+
+
+        	   for (uint32_t sector = 0; sector < 1024; sector += SectCount)
+        	   {
+            	   s = MS_WriteSector(StartLba + sector, SectCount, pDataBuf);
+            	   if (s != USB_OPERATE_SUCCESS)
+            	   {
+                	   printf("MS_WriteSector=%02x\n", s);
+            	   }
+        	   }
+        	   uint32_t count = R32_TMR1_COUNT;
+
+        	   printf("MS_WriteSector=%02x\n", s);
+        	   printf("Delay counter: %d (%d)\n", count, FREQ_SYS);
+
+
+        	   s = Fat_Init();
            }
            printf("end\n");
            printf("wait_disconnect\n");
@@ -153,7 +192,7 @@ int main( void )
            }
            gDeviceConnectstatus = 0;
            gDeviceUsbType = 0;
-           USB30HOST_Init(DISABLE,endpTXbuff,endpRXbuff);
+           MY_USB30HOST_Init(DISABLE,endpTXbuff,endpRXbuff);
            USB20Host_Init(ENABLE);
            printf("disconnect\n");
            mDelaymS(10);
@@ -171,7 +210,7 @@ int main( void )
                gDeviceUsbType = USB_U20_SPEED;
                gDeviceConnectstatus = USB_INT_CONNECT_U20;
                mDelaymS(100);
-               USB30HOST_Init(ENABLE,endpTXbuff,endpRXbuff);
+               MY_USB30HOST_Init(ENABLE,endpTXbuff,endpRXbuff);
                USB20HOST_SetBusReset();
            }
            else

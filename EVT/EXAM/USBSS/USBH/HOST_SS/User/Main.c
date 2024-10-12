@@ -114,7 +114,7 @@ int main( void )
         {
             if( g_DeviceUsbType == USB_U30_SPEED )                     //3.0Device connection
             {
-                mDelaymS(5);
+                mDelaymS(100);
                 USB30_Host_Enum();
 #if DUG_FUNC_EN
                 U30_BulkTest();

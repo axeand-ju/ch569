@@ -16,6 +16,7 @@
 /* Function */
 void LINK_IRQHandler( void ) __attribute__((interrupt("WCH-Interrupt-fast")));
 void Analysis_Descr(UINT8 *pdesc, UINT16 l);
+void Extended_Analysis_Descr(UINT8 *pdesc, UINT16 l);
 
 /* Global define */
 #define pSetupreq    ((PUSB_SETUP_REQ)endpTXbuff)
@@ -127,7 +128,7 @@ UINT16 USB30HOST_INTransaction(UINT8 seq_num,UINT8 *recv_packnum ,UINT8 endp_num
     UINT16 num =0;
     UINT32 i = 0;
 
-    num = USB30H_IN_Data(seq_num, recv_packnum, endp_num );
+    num = MY_USB30H_IN_Data(seq_num, recv_packnum, endp_num );
     mDelayuS(200);
     switch( num & 0x7000 )
     {
@@ -135,14 +136,14 @@ UINT16 USB30HOST_INTransaction(UINT8 seq_num,UINT8 *recv_packnum ,UINT8 endp_num
             break;
         default:                                                               //NRDY
             i=0;
-            while( !USB30H_Erdy_Status( &packnum, &endp_num  ) )               //wati ERDY flag
+            while( !MY_USB30H_Erdy_Status( &packnum, &endp_num  ) )               //wati ERDY flag
             {
                 i++;
                 if(i==10000000)
                 {
                     printf("IN ERDY timeout...\n");
                     i=0;
-                    num = USB30H_IN_Data(seq_num, recv_packnum, endp_num);    //retry
+                    num = MY_USB30H_IN_Data(seq_num, recv_packnum, endp_num);    //retry
                     if( (num & 0x7000) == 0x1000 )  {
                         break;                                      //Retry succeeded
                     }
@@ -159,7 +160,7 @@ UINT16 USB30HOST_INTransaction(UINT8 seq_num,UINT8 *recv_packnum ,UINT8 endp_num
             if( (num & 0x7000) == 0x2000)
             {
                 nump = packnum;
-                num = USB30H_IN_Data(seq_num,&packnum, endp_num );
+                num = MY_USB30H_IN_Data(seq_num,&packnum, endp_num );
                 *recv_packnum -= nump;
             }
             break;
@@ -187,7 +188,7 @@ UINT8 USB30HOST_OUTTransaction(UINT8 seq_num,UINT8 send_packnum ,UINT8 endp_num,
     UINT8  packnump;
     UINT32 i;
 
-    sta = USB30H_OUT_Data(seq_num, send_packnum, endp_num, txlen);
+    sta = MY_USB30H_OUT_Data(seq_num, send_packnum, endp_num, txlen);
     switch(sta&0x07)
     {
         case 1:                                                                        //ACK
@@ -195,14 +196,14 @@ UINT8 USB30HOST_OUTTransaction(UINT8 seq_num,UINT8 send_packnum ,UINT8 endp_num,
             break;
         default:                                                                       //NRDY
             i=0;
-            while( !USB30H_Erdy_Status(  &packnump, &endp_num  ) )                     //wait ERDY flag
+            while( !MY_USB30H_Erdy_Status(  &packnump, &endp_num  ) )                     //wait ERDY flag
             {
                 i++;
                 if(i==10000000)  //ERDY timeout
                 {
                     printf("OUT ERDY timeout...\n");
                     i=0;
-                    sta = USB30H_OUT_Data( seq_num, send_packnum, endp_num, txlen);   //Retry
+                    sta = MY_USB30H_OUT_Data( seq_num, send_packnum, endp_num, txlen);   //Retry
                     if( (sta&0x07) == 1 )                                             //Retry succeeded
                     {
                         send_packnum = 0;
@@ -219,7 +220,7 @@ UINT8 USB30HOST_OUTTransaction(UINT8 seq_num,UINT8 send_packnum ,UINT8 endp_num,
             }
             if((sta&0x07) == 2)
             {
-                sta = USB30H_OUT_Data( seq_num, packnump, endp_num, txlen);
+                sta = MY_USB30H_OUT_Data( seq_num, packnump, endp_num, txlen);
                 send_packnum -= packnump ;
             }
             break;
@@ -260,7 +261,7 @@ UINT16 USB30HOST_CtrlTransaciton(UINT8 *databuf)
       while(ReLen)
       {
           USBSSH->UH_RX_DMA = (UINT32)pBuf + trans_len ;
-          len = USB30H_IN_Data( seq_num, &req_nump, 0 );                 // req_nump=1, endp=0
+          len = MY_USB30H_IN_Data( seq_num, &req_nump, 0 );                 // req_nump=1, endp=0
           mDelayuS(50);
           switch( len & 0x7000 )
           {
@@ -268,14 +269,14 @@ UINT16 USB30HOST_CtrlTransaciton(UINT8 *databuf)
                   break;
               default:                                                   //NRDY or stall
                   i=0;
-                  while( !USB30H_Erdy_Status( NULL, NULL) )
+                  while( !MY_USB30H_Erdy_Status( NULL, NULL) )
                   {
                       i++;
                       if(i==10000000)
                       {
                           printf("IN ERDY timeout...\n");
                         i=0;
-                        len = USB30H_IN_Data(seq_num, &req_nump, 0 );
+                        len = MY_USB30H_IN_Data(seq_num, &req_nump, 0 );
                         if( (len & 0x7000) == 0x1000 )    break;
                         else{
                             break;
@@ -284,7 +285,7 @@ UINT16 USB30HOST_CtrlTransaciton(UINT8 *databuf)
                   }
                   if( (len & 0x7000) == 0x2000)
                   {
-                    len = USB30H_IN_Data(seq_num,&req_nump, 0 );
+                    len = MY_USB30H_IN_Data(seq_num,&req_nump, 0 );
                   }
                   break;
           }
@@ -303,21 +304,21 @@ UINT16 USB30HOST_CtrlTransaciton(UINT8 *databuf)
       {
          USBSSH->UH_TX_DMA = (UINT32)pBuf  + trans_len;
          txlen = (ReLen > USBSS_ENDP0_MAXSIZE) ? USBSS_ENDP0_MAXSIZE : ReLen;
-         len = USB30H_OUT_Data( seq_num, req_nump, 0 ,txlen);      // nump =1, endp=0
+         len = MY_USB30H_OUT_Data( seq_num, req_nump, 0 ,txlen);      // nump =1, endp=0
          switch(len & 0x07)
          {
              case 1:                                               //ACK
                  break;
              default:                                              //NRDY
                  i=0;
-                 while( !USB30H_Erdy_Status(  NULL, NULL  ) )
+                 while( !MY_USB30H_Erdy_Status(  NULL, NULL  ) )
                  {
                      i++;
                      if(i==1000000)
                      {
                          printf("OUT ERDY timeout...\n");
                          i=0;
-                         len = USB30H_OUT_Data(seq_num,req_nump,0,txlen);
+                         len = MY_USB30H_OUT_Data(seq_num,req_nump,0,txlen);
                          if( (len & 0x07) == 1 )     break;
                          else{
                              break;
@@ -326,7 +327,7 @@ UINT16 USB30HOST_CtrlTransaciton(UINT8 *databuf)
                  }
                  if((len &0x07) == 2)
                  {
-                     len = USB30H_OUT_Data(seq_num,req_nump,0,txlen);
+                     len = MY_USB30H_OUT_Data(seq_num,req_nump,0,txlen);
                  }
                  break;
          }
@@ -350,9 +351,9 @@ UINT16 GetDEV_Descriptor(void)
 {
   UINT16 len;
   memcpy( endpTXbuff , get_dev_descriptor , 8);
-  USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Setup( 8 );
   len = USB30HOST_CtrlTransaciton(endpRXbuff);
-  USB30H_Send_Status();
+  MY_USB30H_Send_Status();
   return len;
 }
 
@@ -369,19 +370,20 @@ UINT16 GetConfig_Descriptor(void)
   UINT16 len;
 
   memcpy( endpTXbuff , get_cfg_descriptor , 8);
-  USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Setup( 8 );
   len = USB30HOST_CtrlTransaciton(endpRXbuff);
-  USB30H_Send_Status();
+  MY_USB30H_Send_Status();
   reallen = ((PUSB_CFG_DESCR)endpRXbuff)->wTotalLength ;             //Gets the total length of the configuration descriptor
   config_value = ((PUSB_CFG_DESCR)endpRXbuff)->bConfigurationValue;  //Get device configuration values
 
   memcpy( endpTXbuff , get_cfg_descriptor , 8);                      //Get all configuration descriptors
   pSetupreq->wLength = reallen;
-  USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Setup( 8 );
   len = USB30HOST_CtrlTransaciton(endpRXbuff);
-  USB30H_Send_Status();
+  MY_USB30H_Send_Status();
   if(len < pSetupreq->wLength)   printf("error\n");
   Analysis_Descr(endpRXbuff,len);
+  Extended_Analysis_Descr(endpRXbuff, len);
   return len;
 }
 
@@ -398,9 +400,9 @@ void Set_Address(UINT8 addr)
 {
   memcpy( endpTXbuff , set_address , 8);
   pSetupreq->wValue = addr;
-  USB30H_Send_Setup( 8 );
-  USB30H_Send_Status();
-  USB30H_Set_Address(addr);
+  MY_USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Status();
+  MY_USB30H_Set_Address(addr);
 }
 
 /*******************************************************************************
@@ -413,8 +415,8 @@ void Set_Address(UINT8 addr)
 void Set_IsochDelay(void)
 {
   memcpy( endpTXbuff , set_isoch_delay , 8);
-  USB30H_Send_Setup( 8 );
-  USB30H_Send_Status();
+  MY_USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Status();
 }
 
 /*******************************************************************************
@@ -430,12 +432,12 @@ void Set_Sel(void)
     buf[0] = 0x5f;buf[1] = 0x0a;buf[2] = 0x54;
     buf[3] = 0x08;buf[4] = 0xff;buf[5] = 0x07;
     memcpy( endpTXbuff , set_sel , 8);
-    USB30H_Send_Setup( 8 );
+    MY_USB30H_Send_Setup( 8 );
 
     memcpy( endpTXbuff , buf , 6);
     USB30HOST_CtrlTransaciton(endpTXbuff);
 
-    USB30H_Send_Status();
+    MY_USB30H_Send_Status();
 }
 
 /*******************************************************************************
@@ -450,9 +452,9 @@ void SetFeatureU1(void)
   UINT8 buf[8] = {0x00,0x03,0x30,0x00,0x00,0x00,0x00,0x00};
 
   memcpy( endpTXbuff , buf , 8);
-  USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Setup( 8 );
 
-  USB30H_Send_Status();
+  MY_USB30H_Send_Status();
 }
 
 /*******************************************************************************
@@ -466,9 +468,9 @@ void SetFeatureU2(void)
 {
   UINT8 buf[8] = {0x00,0x03,0x31,0x00,0x00,0x00,0x00,0x00};
   memcpy( endpTXbuff , buf , 8);
-  USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Setup( 8 );
 
-  USB30H_Send_Status();
+  MY_USB30H_Send_Status();
 }
 
 /*******************************************************************************
@@ -482,8 +484,8 @@ void Set_Configuration(void)
 {
   memcpy( endpTXbuff , set_configuration , 8);
   pSetupreq->wValue = config_value;
-  USB30H_Send_Setup( 8 );
-  USB30H_Send_Status();
+  MY_USB30H_Send_Setup( 8 );
+  MY_USB30H_Send_Status();
 }
 
 /*******************************************************************************
@@ -524,6 +526,64 @@ void Analysis_Descr(UINT8 *pdesc, UINT16 l)
             }
         }
     }
+    printf("cfg_descriptor:\n");
+    for(i=0;i<l;i++)
+    {
+    	printf("%02x ", pdesc[i]);
+    }
+    printf("\n");
+}
+
+void Extended_Analysis_Descr(UINT8 *pdesc, UINT16 l)
+{
+	printf("Descriptor Analysis:\n");
+	int i = 0;
+	while (i < l)
+	{
+		printf("bLength: %d\nbDescriptorType: %d ", pdesc[i], pdesc[i+1]);
+		if (pdesc[i+1] == 2) { // Configuration Descriptor
+			printf("(Configuration Descriptor)\n");
+			printf("wTotalLength: %d bytes\n", (pdesc[i+3] << 8) + pdesc[i+2]);
+			printf("bNumInterfaces: %d\n", pdesc[i+4]);
+			printf("bConfigurationValue: %d\n", pdesc[i+5]);
+			printf("iConfiguration: %d\n", pdesc[i+6]);
+			printf("bmAttributes: %02x\n", pdesc[i+7]);
+			printf("bMaxPower: %d mA\n", pdesc[i+8]*2);
+		}
+		else if (pdesc[i+1] == 4) { // Interface Descriptor
+			printf("(Interface Descriptor)\n");
+			printf("bInterfaceNumber: %d\n", pdesc[i+2]);
+			printf("bAlternateSetting: %d\n", pdesc[i+3]);
+			printf("bNumEndpoints: %d\n", pdesc[i+4]);
+			printf("bInterfaceClass: %d\n", pdesc[i+5]);
+			printf("bInterfaceSubClass: %d\n", pdesc[i+6]);
+			printf("bInterfaceProtocol: %d\n", pdesc[i+7]);
+			printf("iInterface: %d\n", pdesc[i+8]);
+		}
+		else if (pdesc[i+1] == 5) { // Endpoint Descriptor
+			printf("(Endpoint Descriptor)\n");
+			printf("bEndpointAddress: %02x\n", pdesc[i+2]);
+			printf("bmAttributes: %d\n", pdesc[i+3]);
+			printf("wMaxPacketSize: %d\n", (pdesc[i+5] << 8) + pdesc[i+4]);
+			printf("bInterval: %d\n", pdesc[i+6]);
+		}
+		else if (pdesc[i+1] == 48) { // SuperSpeed Endpoint Companion Descriptor
+			printf("(SuperSpeed Endpoint Companion Descriptor)\n");
+			printf("bMaxBurst: %d\n", pdesc[i+2] + 1);
+			printf("bmAttributes: %d\n", pdesc[i+3]);
+			printf("wBytesPerInterval: %d\n", (pdesc[i+5] << 8) + pdesc[i+4]);
+		}
+		else if (pdesc[i+1] == 36) { // Class-Specific Interface Descriptor
+			printf("(Class-Specific Interface Descriptor)\n");
+			printf("bDescriptorSubtype: %d\n", pdesc[i+2]);
+			printf("bPipeID : %d\n", pdesc[i+3]);
+		}
+		else {
+			printf("(Unknown)\n");
+		}
+		i += pdesc[i];
+	}
+
 }
 
 /*******************************************************************************
@@ -547,9 +607,9 @@ UINT8 USB30HOST_ClearEndpStall( UINT8 endp )
     setup_buf[7] = 0x00;
 
     memcpy( endpTXbuff , setup_buf , 8);
-    USB30H_Send_Setup( 8 );
+    MY_USB30H_Send_Setup( 8 );
     USB30HOST_CtrlTransaciton(endpRXbuff);
-    USB30H_Send_Status();
+    MY_USB30H_Send_Status();
 
     return( USB_INT_SUCCESS );
 }
@@ -565,9 +625,9 @@ UINT8 USB30HSOT_Enumerate_Hotrst( UINT8 *pbuf )
 {
     UINT8 status;
 
-    USB30H_Set_Address( 0 );
+    MY_USB30H_Set_Address( 0 );
     mDelaymS(1);
-    USB30H_Set_Address( 0x08 );
+    MY_USB30H_Set_Address( 0x08 );
 
     GetDEV_Descriptor();
 
@@ -594,7 +654,7 @@ void USB30Host_Enum(void)
 //============= set address ===================
 //        printf("****** set address : 0x08 \n");
         Set_Address(8);
-        USB30H_Set_Address(8);
+        MY_USB30H_Set_Address(8);
 //============= get descriptor ================
 //        printf("****** get dev descriptor \n");
         GetDEV_Descriptor();
@@ -650,13 +710,14 @@ void USB30_link_status(UINT8 s)
  */
 void LINK_IRQHandler (void)         //USBSSH interrupt service
 {
+//	printf("LINK_IRQHandler\n"); // ANDAX
 
     UINT32 temp = 0;
     temp = USBSS->LINK_ERR_STATUS;
     if( USBSSH->LINK_INT_FLAG & LINK_INACT_FLAG )
     {
         USBSSH->LINK_INT_FLAG = LINK_INACT_FLAG;
-        USB30H_Switch_Powermode(POWER_MODE_2);
+        MY_USB30H_Switch_Powermode(POWER_MODE_2);
         printf("link inactive, error status = %0x\n", temp>>16);
     }
     else if( USBSS->LINK_INT_FLAG & LINK_DISABLE_FLAG ) // GO DISABLED
@@ -667,19 +728,19 @@ void LINK_IRQHandler (void)         //USBSSH interrupt service
     else if( USBSSH->LINK_INT_FLAG & LINK_RX_DET_FLAG )
     {
         USBSSH->LINK_INT_FLAG = LINK_RX_DET_FLAG;
-        USB30H_Switch_Powermode(POWER_MODE_2);
+        MY_USB30H_Switch_Powermode(POWER_MODE_2);
     }
     else if( USBSSH->LINK_INT_FLAG & TERM_PRESENT_FLAG ) // term present , begin POLLING
     {
         USBSSH->LINK_INT_FLAG = TERM_PRESENT_FLAG;
         if( USBSS->LINK_STATUS & LINK_PRESENT )
         {
-            USB30H_Switch_Powermode(POWER_MODE_2);
+            MY_USB30H_Switch_Powermode(POWER_MODE_2);
             USBSSH->LINK_CTRL |= POLLING_EN;
         }
         else
         {
-            USB30HOST_Init (DISABLE,endpTXbuff,endpRXbuff); // USBSS host initial
+            MY_USB30HOST_Init (DISABLE,endpTXbuff,endpRXbuff); // USBSS host initial
             USB30_link_status(0);       //disconnect link
             gDeviceConnectstatus = USB_INT_DISCONNECT;
             gDeviceUsbType = 0;
@@ -699,7 +760,7 @@ void LINK_IRQHandler (void)         //USBSSH interrupt service
         if( USBSS->LINK_STATUS & LINK_PRESENT )
         {
             while(USBSS->LINK_STATUS & LINK_RX_DETECT);
-            USB30H_Switch_Powermode(POWER_MODE_0);
+            MY_USB30H_Switch_Powermode(POWER_MODE_0);
         }
     }
     else if( USBSSH->LINK_INT_FLAG & LINK_RDY_FLAG ) // POLLING SHAKE DONE
@@ -708,7 +769,7 @@ void LINK_IRQHandler (void)         //USBSSH interrupt service
         if( tx_lmp_port ) // LMP, TX PORT_CAP & RX PORT_CAP
         {
             tx_lmp_port = 0;
-            USB30H_Lmp_Init();
+            MY_USB30H_Lmp_Init();
             USB30_link_status(1);   //link success
             gDeviceConnectstatus = USB_INT_CONNECT;
             gDeviceUsbType = USB_U30_SPEED;
@@ -730,6 +791,7 @@ void LINK_IRQHandler (void)         //USBSSH interrupt service
  */
 void USBSS_IRQHandler (void)            //USBSSH interrupt service
 {
+	printf("USBSS_IRQHandler\n"); // ANDAX
     ;
 }
 

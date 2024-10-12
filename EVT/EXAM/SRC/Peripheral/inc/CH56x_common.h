@@ -45,7 +45,7 @@
 
 /* SystemCoreClock */ 
 #ifndef	 FREQ_SYS  
-#define  FREQ_SYS		80000000   
+#define  FREQ_SYS		120000000
 #endif   
 
 

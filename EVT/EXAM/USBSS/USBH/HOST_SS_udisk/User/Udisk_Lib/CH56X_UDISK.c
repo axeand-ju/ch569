@@ -96,7 +96,7 @@ UINT8 MS_GetMaxLun( void )
     if( gDeviceUsbType == USB_U30_SPEED )
     {
         memcpy( endpTXbuff , setup_buf , 8);
-        s = USB30H_Send_Setup( 8 );
+        s = MY_USB30H_Send_Setup( 8 );
         if( s )
         {
             return USB_CH56XUSBTIMEOUT;
@@ -107,7 +107,7 @@ UINT8 MS_GetMaxLun( void )
             return USB_CH56XUSBTIMEOUT;
         }
 
-        s = USB30H_Send_Status();
+        s = MY_USB30H_Send_Status();
         if( s )
         {
             return USB_CH56XUSBTIMEOUT;
@@ -385,7 +385,8 @@ UINT8 MS_U30HOST_BulkOutHandle( UINT8 *pDatBuf, UINT32 *pSize )
 		}
 
 		p = (UINT8 *)endpTXbuff;
-		memcpy(p , pDatBuf , *pSize);
+//		memcpy(p , pDatBuf , *pSize); // Must be wrong!!
+		memcpy(p , pDatBuf , len); // Fix by ANDAX
 
 		do
 		{

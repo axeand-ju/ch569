@@ -284,6 +284,8 @@
  * @return    None
  */
 extern void USB30HOST_Init (FunctionalState sta,PUINT8 endpTXbuff , PUINT8 endpRXbuff);
+void MY_USB30HOST_Init (FunctionalState sta,PUINT8 endpTXbuff , PUINT8 endpRXbuff);
+
 /*******************************************************************************
  * @fn     USB30H_Lmp_Init
  *
@@ -292,6 +294,7 @@ extern void USB30HOST_Init (FunctionalState sta,PUINT8 endpTXbuff , PUINT8 endpR
  * @return   None
  */
 extern void USB30H_Lmp_Init(void);
+void MY_USB30H_Lmp_Init(void);
 
 /*******************************************************************************
  * @fn    USB30H_Send_Setup
@@ -304,6 +307,7 @@ extern void USB30H_Lmp_Init(void);
  *          1 - timeout
  */
 extern UINT8 USB30H_Send_Setup( UINT32 tx_len );
+UINT8 MY_USB30H_Send_Setup( UINT32 tx_len );
 
 /*******************************************************************************
  * @fn     USB30H_Send_Status
@@ -315,6 +319,7 @@ extern UINT8 USB30H_Send_Setup( UINT32 tx_len );
  * @return   None
  */
 extern UINT8 USB30H_Send_Status(void);
+UINT8 MY_USB30H_Send_Status(void);
 
 /*******************************************************************************
  * @fn     USB30H_Erdy_Status
@@ -329,6 +334,7 @@ extern UINT8 USB30H_Send_Status(void);
  * @return   1 - received ERDY       0 - Not received ERDY
  */
 extern UINT8 USB30H_Erdy_Status( PUINT8 nump, PUINT8 endp  );
+UINT8 MY_USB30H_Erdy_Status( PUINT8 nump, PUINT8 endp  );
 
 /*******************************************************************************
  * @fn     USB30H_IN_Data
@@ -346,6 +352,7 @@ extern UINT8 USB30H_Erdy_Status( PUINT8 nump, PUINT8 endp  );
  *                  bit0~11 -  packet length
  */
 extern UINT16 USB30H_IN_Data( UINT8 seq_num, PUINT8 packet_num, UINT8 endp_num );
+UINT16 MY_USB30H_IN_Data( UINT8 seq_num, PUINT8 packet_num, UINT8 endp_num );
 
 /*******************************************************************************
  * @fn     USB30H_OUT_Data
@@ -360,6 +367,7 @@ extern UINT16 USB30H_IN_Data( UINT8 seq_num, PUINT8 packet_num, UINT8 endp_num )
  * @return   status 1-ACK   2-NRDY   3-STALL   4-error
  */
 extern UINT8 USB30H_OUT_Data( UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32 tx_len );
+UINT8 MY_USB30H_OUT_Data( UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32 tx_len );
 
 /*******************************************************************************
  * @fn    USB30H_Set_Address
@@ -371,6 +379,7 @@ extern UINT8 USB30H_OUT_Data( UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, U
  * @return   None
  */
 extern void USB30H_Set_Address( UINT32 address );
+void MY_USB30H_Set_Address( UINT32 address );
 
 /*******************************************************************************
  * @fn    USB30H_Switch_Powermode
@@ -382,6 +391,7 @@ extern void USB30H_Set_Address( UINT32 address );
  * @return   None
  */
 extern void USB30H_Switch_Powermode( UINT32 pwr_mode );
+void MY_USB30H_Switch_Powermode( UINT32 pwr_mode );
 
 
 #endif
