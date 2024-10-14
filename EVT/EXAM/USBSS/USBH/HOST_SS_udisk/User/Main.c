@@ -22,14 +22,14 @@
 #include "CHRV3UFI.h"
 #include "CH56x_UDISK.h"
 #include "fat_process.h"
-
+#include "Instrumentation.h"
 
 /* Global Variable */
 UINT8V U30_Check_Time = 0;
 volatile DevInfo g_DevInfo;
 
 __attribute__ ((aligned(16))) UINT8 pNTFS_BUF[512] __attribute__((section(".DMADATA")));
-__attribute__ ((aligned(16))) UINT8 pDataBuf[8192] __attribute__((section(".DMADATA")));
+__attribute__ ((aligned(16))) UINT8 pDataBuf[16384] __attribute__((section(".DMADATA")));
 
 __attribute__ ((aligned(4))) UINT8  RxBuffer[1] ;      // IN, must even address
 __attribute__ ((aligned(4))) UINT8  TxBuffer[1] ;      // OUT, must even address
@@ -146,10 +146,10 @@ int main( void )
         	   printf("MS_ReadSector=%02x (%s)\n", s, pDataBuf);
 
 
-        	   StartLba++;
-        	   SectCount = 16;
+        	   StartLba = 200000000;
+        	   SectCount = 8;
 #if 1
-        	   for (int c = 256; c < 8192; c++)
+        	   for (int c = 256; c < 16384; c++)
         	   {
         		   pDataBuf[c] = /*255 -*/ (c % 256);
         	   }
@@ -158,20 +158,29 @@ int main( void )
         	   R8_TMR1_CTRL_MOD = RB_TMR_ALL_CLEAR;
         	   R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN | RB_TMR_CAP_COUNT;
 
+        	   start_instrumentation();
+
+        	   ADD_INSTR_EVENT(EVENT_TYPE_0);
 
         	   for (uint32_t sector = 0; sector < 1024; sector += SectCount)
         	   {
-            	   s = MS_WriteSector(StartLba + sector, SectCount, pDataBuf);
+//            	   s = MS_WriteSector(StartLba + sector, SectCount, pDataBuf);
+            	   s = AA_WriteSector(StartLba + sector, SectCount, pDataBuf);
             	   if (s != USB_OPERATE_SUCCESS)
             	   {
-                	   printf("MS_WriteSector=%02x\n", s);
+                	   printf("ERROR: MS_WriteSector=%02x\n", s);
             	   }
         	   }
+
+        	   ADD_INSTR_EVENT(EVENT_TYPE_1);
+
         	   uint32_t count = R32_TMR1_COUNT;
+
+        	   print_instr_event_buffer();
 
         	   printf("MS_WriteSector=%02x\n", s);
         	   printf("Delay counter: %d (%d)\n", count, FREQ_SYS);
-
+        	   printf("Data rate: %d MB/s\n", 512*1024*120/count);
 
         	   s = Fat_Init();
            }

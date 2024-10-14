@@ -16,7 +16,7 @@
 #include "CH56x_host_hs.h"
 #include "CH56X_UDISK.h"
 #include "CHRV3UFI.h"
-
+#include "Instrumentation.h"
 
 /* Global Define */
 #define U30_MAX_PACKSIZE        1024
@@ -40,7 +40,8 @@ UINT8  gUdisk_flag = 0;
 UINT8V Hot_ret_flag;
 UINT16 U20_ENDP_SIZE;
 
-__attribute__ ((aligned(16))) BULK_ONLY_CMD   mBOC  __attribute__((section(".DMADATA")));
+__attribute__ ((aligned(16))) BULK_ONLY_CMD_CBW   mCBW  __attribute__((section(".DMADATA")));
+__attribute__ ((aligned(16))) BULK_ONLY_CMD_CSW   mCSW  __attribute__((section(".DMADATA")));
 
 typedef struct _USB_ENDPOINT_DESCRIPTOR_U30 /*Endpoint descriptor*/
 {
@@ -333,9 +334,8 @@ UINT8 MS_U30HOST_BulkInHandle( UINT8 *pDatBuf, UINT32 *pSize )
 		{
 			len = *pSize;
 		}
-        USBSSH->UH_RX_DMA = (UINT32)(UINT8 *)endpRXbuff;
+        USBSSH->UH_RX_DMA = (UINT32)pDatBuf;
 		len = USB30HOST_INTransaction(gDiskBulkInTog ,&packnum , gDiskBulkInEp , &status);
-		memcpy(pDatBuf,endpRXbuff,len);
 		if( status == 0x3000 )
 		{
 		    return USB_INT_DISK_ERR;
@@ -368,7 +368,6 @@ UINT8 MS_U30HOST_BulkInHandle( UINT8 *pDatBuf, UINT32 *pSize )
 UINT8 MS_U30HOST_BulkOutHandle( UINT8 *pDatBuf, UINT32 *pSize )
 {
 	UINT16 len;
-	UINT8* p;
 	UINT8 count = 0;
     UINT32 timeoutcount = 0;
 	while(1)
@@ -384,9 +383,8 @@ UINT8 MS_U30HOST_BulkOutHandle( UINT8 *pDatBuf, UINT32 *pSize )
 			len = *pSize;
 		}
 
-		p = (UINT8 *)endpTXbuff;
-//		memcpy(p , pDatBuf , *pSize); // Must be wrong!!
-		memcpy(p , pDatBuf , len); // Fix by ANDAX
+		// Zero-copy fix ANDAX
+		USBSSH->UH_TX_DMA = (UINT32V) pDatBuf;
 
 		do
 		{
@@ -524,13 +522,13 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 	UINT32 len,i;
 
 	p = DataBuf;
-	mBOC.mCBW.mCBW_Sig = USB_BO_CBW_SIG;
-	mBOC.mCBW.mCBW_Tag = 0x05630563;
-	mBOC.mCBW.mCBW_LUN = gDiskCurLun;			   							    /* Operation current logical unit number */
+	mCBW.mCBW_Sig = USB_BO_CBW_SIG;
+	mCBW.mCBW_Tag = 0x05630563;
+	mCBW.mCBW_LUN = gDiskCurLun;			   							    /* Operation current logical unit number */
 	len = USB_BO_CBW_SIZE;
 	if( gDeviceUsbType == USB_U30_SPEED )
 	{
-		status = MS_U30HOST_BulkOutHandle( (UINT8 *)&mBOC.mCBW, &len );
+		status = MS_U30HOST_BulkOutHandle( (UINT8 *)&mCBW, &len );
 		for (i = 0; i < 50; ++i)
 		{
             mDelayuS(1);
@@ -538,7 +536,7 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 	}
 	else
 	{
-		status = MS_U20HOST_BulkOutHandle( (UINT8 *)&mBOC.mCBW, &len );
+		status = MS_U20HOST_BulkOutHandle( (UINT8 *)&mCBW, &len );
 	}
 	if( status == USB_INT_DISCONNECT )											/* If the device is disconnected, return directly */
 	{
@@ -569,11 +567,11 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 		if( gDeviceUsbType == USB_U30_SPEED )
 		{
 
-			status = MS_U30HOST_BulkOutHandle( (UINT8 *)&mBOC.mCBW, &len );
+			status = MS_U30HOST_BulkOutHandle( (UINT8 *)&mCBW, &len );
 		}
 		else
 		{
-			status = MS_U20HOST_BulkOutHandle( (UINT8 *)&mBOC.mCBW, &len );
+			status = MS_U20HOST_BulkOutHandle( (UINT8 *)&mCBW, &len );
 		}
 		if( status == USB_INT_DISCONNECT )
 		{
@@ -591,7 +589,7 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 		}
 	}
 
-	if( ( mBOC.mCBW.mCBW_DataLen > 0 ) && ( mBOC.mCBW.mCBW_Flag == USB_BO_DATA_IN ) )
+	if( ( mCBW.mCBW_DataLen > 0 ) && ( mCBW.mCBW_Flag == USB_BO_DATA_IN ) )
 	{
 
 		/* If there is data to be uploaded, send IN token for data reading */
@@ -600,7 +598,7 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 //			return( USB_PARAMETER_ERROR );										/* Parameter error */
 //		}
 		/* Send upload IN */
-		len = mBOC.mCBW.mCBW_DataLen;
+		len = mCBW.mCBW_DataLen;
 		if( gDeviceUsbType == USB_U30_SPEED )
 		{
 			status = MS_U30HOST_BulkInHandle( p, &len );
@@ -642,16 +640,16 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 			else return status;
 		}
 	}
-	else if( ( mBOC.mCBW.mCBW_DataLen > 0 ) && ( mBOC.mCBW.mCBW_Flag == USB_BO_DATA_OUT ) )
+	else if( ( mCBW.mCBW_DataLen > 0 ) && ( mCBW.mCBW_Flag == USB_BO_DATA_OUT ) )
 	{
 
 		/* If there is data to be downloaded, send the OUT token for data reading */
-		if( mBOC.mCBW.mCBW_DataLen > DEFAULT_MAX_OPERATE_SIZE )
+		if( mCBW.mCBW_DataLen > DEFAULT_MAX_OPERATE_SIZE )
 		{
 			return( USB_PARAMETER_ERROR );
 		}
 		/* Send download OUT */
-		len = mBOC.mCBW.mCBW_DataLen;
+		len = mCBW.mCBW_DataLen;
 		if( gDeviceUsbType == USB_U30_SPEED )
 		{
 			status = MS_U30HOST_BulkOutHandle( p, &len );
@@ -689,13 +687,13 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 
 	if( gDeviceUsbType == USB_U30_SPEED )
 	{
-	    status = MS_U30HOST_BulkInHandle( (UINT8 *)&mBOC.mCSW, &len );
+	    status = MS_U30HOST_BulkInHandle( (UINT8 *)&mCSW, &len );
 	}
 	else
 	{
-		status = MS_U20HOST_BulkInHandle( (UINT8 *)&mBOC.mCSW, &len );
+		status = MS_U20HOST_BulkInHandle( (UINT8 *)&mCSW, &len );
 	}
-	p = (UINT8 *)&mBOC.mCSW;
+	p = (UINT8 *)&mCSW;
 #ifdef  MY_DEBUG_PRINTF
 	for( i=0;i!=len;i++ ){
 		printf("%02x ",*p++);
@@ -709,11 +707,11 @@ UINT8 MS_ScsiCmd_Process( UINT8 *DataBuf )
 		{
 			return( USB_INT_DISK_ERR );
 		}
-		if( mBOC.mCSW.mCSW_Status == 0 )
+		if( mCSW.mCSW_Status == 0 )
 		{
 			return( USB_OPERATE_SUCCESS );
 		}
-		else if( mBOC.mCSW.mCSW_Status >= 2 )
+		else if( mCSW.mCSW_Status >= 2 )
 		{
 			return( USB_INT_DISK_ERR );
 		}
@@ -763,15 +761,15 @@ UINT8 MS_RequestSense( UINT8 *pbuf )
 {
 	mDelaymS( 10 );
 	if( gDeviceConnectstatus == USB_INT_DISCONNECT )return USB_INT_DISCONNECT;
-	mBOC.mCBW.mCBW_DataLen 	   = 0x00000012;
-	mBOC.mCBW.mCBW_Flag 	   = 0x80;
-	mBOC.mCBW.mCBW_CB_Len 	   = 0x06;
-	mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x03;
-	mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 4 ] = 0x12;
-	mBOC.mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
+	mCBW.mCBW_DataLen 	  = 0x00000012;
+	mCBW.mCBW_Flag 	      = 0x80;
+	mCBW.mCBW_CB_Len 	  = 0x06;
+	mCBW.mCBW_CB_Buf[ 0 ] = 0x03;
+	mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 4 ] = 0x12;
+	mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
 	return( MS_ScsiCmd_Process( pbuf ) );
 }
 
@@ -789,15 +787,15 @@ UINT8 MS_DiskInquiry(  UINT8 *pbuf )
 	for( retry = 0;retry!=3;retry++ )
 	{
 	    mDelaymS( 100 * (retry+1) );
-        mBOC.mCBW.mCBW_DataLen 	   = 0x00000024;
-        mBOC.mCBW.mCBW_Flag 	   = 0x80;
-        mBOC.mCBW.mCBW_CB_Len 	   = 0x06;
-        mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x12;
-        mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-        mBOC.mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
-        mBOC.mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
-        mBOC.mCBW.mCBW_CB_Buf[ 4 ] = 0x24;
-        mBOC.mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
+        mCBW.mCBW_DataLen 	  = 0x00000024;
+        mCBW.mCBW_Flag 	      = 0x80;
+        mCBW.mCBW_CB_Len 	  = 0x06;
+        mCBW.mCBW_CB_Buf[ 0 ] = 0x12;
+        mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+        mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
+        mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
+        mCBW.mCBW_CB_Buf[ 4 ] = 0x24;
+        mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
         s = MS_ScsiCmd_Process( pbuf );
         if( s == USB_OPERATE_SUCCESS )
         {
@@ -818,15 +816,15 @@ UINT8 MS_DiskInquiry(  UINT8 *pbuf )
 UINT8 MS_DiskInquiry_1(  UINT8 *pbuf )
 {
     UINT8 s;
-    mBOC.mCBW.mCBW_DataLen     = 0x00000024;
-    mBOC.mCBW.mCBW_Flag        = 0x80;
-    mBOC.mCBW.mCBW_CB_Len      = 0x06;
-    mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x12;
-    mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-    mBOC.mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
-    mBOC.mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
-    mBOC.mCBW.mCBW_CB_Buf[ 4 ] = 0x24;
-    mBOC.mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
+    mCBW.mCBW_DataLen     = 0x00000024;
+    mCBW.mCBW_Flag        = 0x80;
+    mCBW.mCBW_CB_Len      = 0x06;
+    mCBW.mCBW_CB_Buf[ 0 ] = 0x12;
+    mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+    mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
+    mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
+    mCBW.mCBW_CB_Buf[ 4 ] = 0x24;
+    mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
     s = MS_ScsiCmd_Process( pbuf );
     return( s );
 }
@@ -841,19 +839,19 @@ UINT8 MS_DiskInquiry_1(  UINT8 *pbuf )
 *******************************************************************************/
 UINT8 MS_DiskCapacity( UINT8 *pbuf )
 {
-	mBOC.mCBW.mCBW_DataLen     = 0x00000008;
-	mBOC.mCBW.mCBW_Flag 	   = 0x80;
-	mBOC.mCBW.mCBW_CB_Len      = 10;
-	mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x25;
-	mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 4 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 8 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
+	mCBW.mCBW_DataLen     = 0x00000008;
+	mCBW.mCBW_Flag 	      = 0x80;
+	mCBW.mCBW_CB_Len      = 10;
+	mCBW.mCBW_CB_Buf[ 0 ] = 0x25;
+	mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 4 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 8 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
 	return( MS_ScsiCmd_Process( pbuf ) );
 }
 
@@ -867,15 +865,15 @@ UINT8 MS_DiskCapacity( UINT8 *pbuf )
 *******************************************************************************/
 UINT8 MS_DiskTestReady(  UINT8 *pbuf )
 {
-	mBOC.mCBW.mCBW_DataLen 	   = 0x00;
-	mBOC.mCBW.mCBW_Flag 	   = 0x00;
-	mBOC.mCBW.mCBW_CB_Len      = 0x06;
-	mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 4 ] = 0x00;
-	mBOC.mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
+	mCBW.mCBW_DataLen 	  = 0x00;
+	mCBW.mCBW_Flag 	      = 0x00;
+	mCBW.mCBW_CB_Len      = 0x06;
+	mCBW.mCBW_CB_Buf[ 0 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 2 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 3 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 4 ] = 0x00;
+	mCBW.mCBW_CB_Buf[ 5 ] = 0x00;
 	return( MS_ScsiCmd_Process( pbuf ) );
 }
 
@@ -898,19 +896,19 @@ UINT8 MS_ReadSector( UINT32 StartLba, UINT16 SectCount, PUINT8 DataBuf )
 
     for( err = 0; err < 3; err ++ )                                             /* Error retry */
     {
-        mBOC.mCBW.mCBW_DataLen = len;
-        mBOC.mCBW.mCBW_Flag = 0x80;
-        mBOC.mCBW.mCBW_CB_Len = 10;
-        mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x28;
-        mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-        mBOC.mCBW.mCBW_CB_Buf[ 2 ] = (UINT8)( StartLba >> 24 );
-        mBOC.mCBW.mCBW_CB_Buf[ 3 ] = (UINT8)( StartLba >> 16 );
-        mBOC.mCBW.mCBW_CB_Buf[ 4 ] = (UINT8)( StartLba >> 8 );
-        mBOC.mCBW.mCBW_CB_Buf[ 5 ] = (UINT8)( StartLba );
-        mBOC.mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
-        mBOC.mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
-        mBOC.mCBW.mCBW_CB_Buf[ 8 ] = SectCount;
-        mBOC.mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
+        mCBW.mCBW_DataLen     = len;
+        mCBW.mCBW_Flag        = 0x80;
+        mCBW.mCBW_CB_Len      = 10;
+        mCBW.mCBW_CB_Buf[ 0 ] = 0x28;
+        mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+        mCBW.mCBW_CB_Buf[ 2 ] = (UINT8)( StartLba >> 24 );
+        mCBW.mCBW_CB_Buf[ 3 ] = (UINT8)( StartLba >> 16 );
+        mCBW.mCBW_CB_Buf[ 4 ] = (UINT8)( StartLba >> 8 );
+        mCBW.mCBW_CB_Buf[ 5 ] = (UINT8)( StartLba );
+        mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
+        mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
+        mCBW.mCBW_CB_Buf[ 8 ] = SectCount;
+        mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
 
         s = MS_ScsiCmd_Process( DataBuf );
 
@@ -956,19 +954,19 @@ UINT8 MS_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
 	}
 	for( err = 0; err < 3; err++ )
 	{
-		mBOC.mCBW.mCBW_DataLen = len;
-		mBOC.mCBW.mCBW_Flag = 0x00;
-		mBOC.mCBW.mCBW_CB_Len = 10;
-		mBOC.mCBW.mCBW_CB_Buf[ 0 ] = 0x2A;
-		mBOC.mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-		mBOC.mCBW.mCBW_CB_Buf[ 2 ] = (UINT8)( StartLba >> 24 );
-		mBOC.mCBW.mCBW_CB_Buf[ 3 ] = (UINT8)( StartLba >> 16 );
-		mBOC.mCBW.mCBW_CB_Buf[ 4 ] = (UINT8)( StartLba >> 8 );
-		mBOC.mCBW.mCBW_CB_Buf[ 5 ] = (UINT8)( StartLba );
-		mBOC.mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
-		mBOC.mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
-		mBOC.mCBW.mCBW_CB_Buf[ 8 ] = SectCount;
-		mBOC.mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
+		mCBW.mCBW_DataLen     = len;
+		mCBW.mCBW_Flag        = 0x00;
+		mCBW.mCBW_CB_Len      = 10;
+		mCBW.mCBW_CB_Buf[ 0 ] = 0x2A;
+		mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+		mCBW.mCBW_CB_Buf[ 2 ] = (UINT8)( StartLba >> 24 );
+		mCBW.mCBW_CB_Buf[ 3 ] = (UINT8)( StartLba >> 16 );
+		mCBW.mCBW_CB_Buf[ 4 ] = (UINT8)( StartLba >> 8 );
+		mCBW.mCBW_CB_Buf[ 5 ] = (UINT8)( StartLba );
+		mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
+		mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
+		mCBW.mCBW_CB_Buf[ 8 ] = SectCount;
+		mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
 
 		s = MS_ScsiCmd_Process( DataBuf );
 		if( s == USB_OPERATE_SUCCESS )
@@ -987,6 +985,175 @@ UINT8 MS_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
 	}
 	return( s );
 }
+
+
+/*******************************************************************************
+* Function Name  : AA_WriteSector
+* Description    : Write data to disk in sectors using zero-copy and burst
+* Input          : *Device-----USB device currently operating
+*                  StartLba----Start sector number
+*                  SectCount---Number of sectors to write
+*                  DataBuf-----data buffer
+* Output         : None
+* Return         : None
+*******************************************************************************/
+UINT8 AA_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
+{
+	ADD_INSTR_EVENT(EVENT_TYPE_2);
+
+	UINT8  err;
+	UINT32 len;
+	UINT8 status;
+
+#ifdef  MY_DEBUG_PRINTF
+	printf( "AA_WriteSector:...\n" );
+#endif
+
+	if (gDeviceUsbType != USB_U30_SPEED)
+	{
+		// Fall back to original version MS_WriteSector
+		return MS_WriteSector(StartLba, SectCount, DataBuf);
+	}
+
+	len = SectCount * gDiskPerSecSize;		  									/* Calculate total read length*/
+#if 0
+	if( len > DEFAULT_MAX_OPERATE_SIZE )
+	{
+		return( USB_PARAMETER_ERROR );
+	}
+#endif
+
+	for( err = 0; err < 3; err++ )
+	{
+		mCBW.mCBW_DataLen = len;
+		mCBW.mCBW_Flag = 0x00;
+		mCBW.mCBW_CB_Len = 10;
+		mCBW.mCBW_CB_Buf[ 0 ] = 0x2A;
+		mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
+		mCBW.mCBW_CB_Buf[ 2 ] = (UINT8)( StartLba >> 24 );
+		mCBW.mCBW_CB_Buf[ 3 ] = (UINT8)( StartLba >> 16 );
+		mCBW.mCBW_CB_Buf[ 4 ] = (UINT8)( StartLba >> 8 );
+		mCBW.mCBW_CB_Buf[ 5 ] = (UINT8)( StartLba );
+		mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
+		mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
+		mCBW.mCBW_CB_Buf[ 8 ] = SectCount;
+		mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
+		mCBW.mCBW_Sig = USB_BO_CBW_SIG;
+		mCBW.mCBW_Tag = 0x05630563;
+		mCBW.mCBW_LUN = gDiskCurLun;			   							    /* Operation current logical unit number */
+		len = USB_BO_CBW_SIZE;
+
+		USBSSH->UH_TX_DMA = (UINT32)endpTXbuff;
+		status = MS_U30HOST_BulkOutHandle( (UINT8 *)&mCBW, &len );
+
+		ADD_INSTR_EVENT(EVENT_TYPE_3);
+
+//		USBSSH->UH_TX_DMA = (UINT32)((UINT8 *)&mBOC.mCBW);
+//		count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, USB_BO_CBW_SIZE);
+//		USBSSH->UH_TX_DMA = (UINT32)endpTXbuff;
+//		status = USB_INT_SUCCESS;
+
+		mDelayuS(1);
+
+		if (status == USB_INT_SUCCESS)
+		{
+			len = mCBW.mCBW_DataLen;
+			status = MS_U30HOST_BulkOutHandle( DataBuf, &len );
+
+			ADD_INSTR_EVENT(EVENT_TYPE_4);
+
+//			mDelayuS(1);
+
+			if (status == USB_INT_SUCCESS)
+			{
+				len = 0;
+			    status = MS_U30HOST_BulkInHandle( (UINT8 *)&mCSW, &len );
+
+//				mDelayuS(1);
+
+#ifdef  MY_DEBUG_PRINTF
+				UINT8* p = (UINT8 *)&mCSW;
+				for( i=0;i!=len;i++ ){
+					printf("%02x ",*p++);
+				}
+				printf("len=%d\n",len);
+#endif
+
+				if( status == USB_INT_SUCCESS )
+				{
+					if( len != USB_BO_CSW_SIZE )	/* Judge whether the length is 13 bytes */
+					{
+						return( USB_INT_DISK_ERR );
+					}
+					if (mCSW.mCSW_Sig != USB_BO_CSW_SIG)
+					{
+						return( USB_INT_DISK_ERR );
+					}
+					if( mCSW.mCSW_Status == 0 )
+					{
+						ADD_INSTR_EVENT(EVENT_TYPE_5);
+						return( USB_OPERATE_SUCCESS );
+					}
+					else if( mCSW.mCSW_Status >= 2 )
+					{
+						return( USB_INT_DISK_ERR );
+					}
+					else
+					{
+						return( USB_INT_DISK_ERR1 );  										/* Disk operation error */
+					}
+				}
+				else if( status == USB_INT_DISCONNECT )
+				{
+					return( status );
+				}
+				else
+				{
+					/* Judge which step is wrong */
+					if( (status == USB_INT_DISK_ERR))
+					{
+						status = USB30HOST_ClearEndpStall( 0x80 | gDiskBulkInEp );
+						gDiskBulkInTog = 0;
+
+						if( status == USB_INT_DISCONNECT )
+						{
+							return( status );
+						}
+					}
+					return status;
+				}
+
+				status = USB_OPERATE_SUCCESS;
+				return( status );
+			}
+
+//			USBSSH->UH_TX_DMA = (UINT32)DataBuf;
+//		    count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, len);
+//			USBSSH->UH_TX_DMA = (UINT32)endpTXbuff;
+
+		}
+
+		if( status == USB_INT_DISK_ERR )
+		{
+			status = USB30HOST_ClearEndpStall( gDiskBulkOutEp );
+		}
+
+		if( status == USB_INT_DISCONNECT || status == USB_INT_CONNECT )
+		{
+			return( status );
+		}
+
+		status = MS_RequestSense( DataBuf );
+		if( status == USB_INT_DISCONNECT || status == USB_INT_CONNECT  )
+		{
+			return( status );
+		}
+
+		printf("Retry write...\n");
+	}
+	return status;
+}
+
 
 /*******************************************************************************
 * Function Name  : MS_Init

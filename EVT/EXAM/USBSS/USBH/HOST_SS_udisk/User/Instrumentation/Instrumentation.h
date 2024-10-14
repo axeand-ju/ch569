@@ -1,0 +1,54 @@
+/*
+ * Instrumentation.h
+ *
+ *  Created on: 13 Oct 2024
+ *      Author: axeand
+ */
+
+#ifndef USER_INSTRUMENTATION_INSTRUMENTATION_H_
+#define USER_INSTRUMENTATION_INSTRUMENTATION_H_
+
+#define MAX_NUM_INSTR_EVENTS 8192
+
+#define EVENT_TYPE_0  0x00000000
+#define EVENT_TYPE_1  0x04000000
+#define EVENT_TYPE_2  0x08000000
+#define EVENT_TYPE_3  0x0C000000
+#define EVENT_TYPE_4  0x10000000
+#define EVENT_TYPE_5  0x14000000
+#define EVENT_TYPE_6  0x18000000
+#define EVENT_TYPE_7  0x1C000000
+#define EVENT_TYPE_8  0x20000000
+#define EVENT_TYPE_9  0x24000000
+#define EVENT_TYPE_10 0x28000000
+#define EVENT_TYPE_11 0x2C000000
+#define EVENT_TYPE_12 0x30000000
+#define EVENT_TYPE_13 0x34000000
+#define EVENT_TYPE_14 0x38000000
+#define EVENT_TYPE_15 0x3C000000
+#define EVENT_TYPE_16 0x40000000
+#define EVENT_TYPE_17 0x44000000
+#define EVENT_TYPE_18 0x48000000
+#define EVENT_TYPE_19 0x4C000000
+#define EVENT_TYPE_20 0x50000000
+#define EVENT_TYPE_21 0x54000000
+#define EVENT_TYPE_22 0x58000000
+#define EVENT_TYPE_23 0x5C000000
+#define EVENT_TYPE_24 0x60000000
+#define EVENT_TYPE_25 0x64000000
+#define EVENT_TYPE_26 0x68000000
+#define EVENT_TYPE_27 0x6C000000
+#define EVENT_TYPE_28 0x70000000
+#define EVENT_TYPE_29 0x74000000
+#define EVENT_TYPE_30 0x78000000
+#define EVENT_TYPE_31 0x7C000000
+
+extern uint32_t instr_event_buffer[MAX_NUM_INSTR_EVENTS];
+extern int instr_event_ix;
+
+#define ADD_INSTR_EVENT(ev) if (instr_event_ix < MAX_NUM_INSTR_EVENTS) instr_event_buffer[instr_event_ix++] = ev | R32_TMR1_COUNT;
+
+void start_instrumentation();
+void print_instr_event_buffer();
+
+#endif /* USER_INSTRUMENTATION_INSTRUMENTATION_H_ */

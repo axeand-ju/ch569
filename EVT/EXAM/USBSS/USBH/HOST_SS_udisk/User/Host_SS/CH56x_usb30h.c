@@ -12,6 +12,7 @@
 #include "CH56xusb30h_LIB.h"
 #include "CH56x_usb30h.h"
 #include "CH56X_UDISK.h"
+#include "Instrumentation.h"
 
 /* Function */
 void LINK_IRQHandler( void ) __attribute__((interrupt("WCH-Interrupt-fast")));
@@ -129,7 +130,7 @@ UINT16 USB30HOST_INTransaction(UINT8 seq_num,UINT8 *recv_packnum ,UINT8 endp_num
     UINT32 i = 0;
 
     num = MY_USB30H_IN_Data(seq_num, recv_packnum, endp_num );
-    mDelayuS(200);
+//    mDelayuS(2);
     switch( num & 0x7000 )
     {
         case 0x1000:                                                           //ACK
@@ -196,6 +197,7 @@ UINT8 USB30HOST_OUTTransaction(UINT8 seq_num,UINT8 send_packnum ,UINT8 endp_num,
             break;
         default:                                                                       //NRDY
             i=0;
+//            printf("sta: %0x2\n", sta);
             while( !MY_USB30H_Erdy_Status(  &packnump, &endp_num  ) )                     //wait ERDY flag
             {
                 i++;
@@ -218,11 +220,13 @@ UINT8 USB30HOST_OUTTransaction(UINT8 seq_num,UINT8 send_packnum ,UINT8 endp_num,
             if(packnump > 1){                                                        //Only one package
                 packnump = 1;
             }
+
             if((sta&0x07) == 2)
             {
                 sta = MY_USB30H_OUT_Data( seq_num, packnump, endp_num, txlen);
                 send_packnum -= packnump ;
             }
+
             break;
     }
 

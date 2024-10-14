@@ -23,7 +23,7 @@
 #define USB_BO_DATA_IN			  0x80
 #define USB_BO_DATA_OUT			  0x00
 
-
+#if 0
 typedef union _BULK_ONLY_CMD
 {
 	struct
@@ -44,6 +44,24 @@ typedef union _BULK_ONLY_CMD
 		UINT8  mCSW_Status;														/* Return: command execution result status */
 	} mCSW;																		/* Command status block of BulkOnly protocol, output CSW structure */
 } BULK_ONLY_CMD;
+#endif
+typedef struct
+{
+	UINT32 mCBW_Sig;
+	UINT32 mCBW_Tag;
+	UINT32 mCBW_DataLen;									/* Input: data transmission length */
+	UINT8  mCBW_Flag;										/* Input: transmission direction and other signs */
+	UINT8  mCBW_LUN;
+	UINT8  mCBW_CB_Len;										/* Input: length of command block, valid values are 1 to 16 */
+	UINT8  mCBW_CB_Buf[16];									/* Input: Command block, the buffer is up to 16 bytes */
+} BULK_ONLY_CMD_CBW;										/* Command block of BulkOnly protocol, input CBW structure */
+typedef	struct
+{
+	UINT32 mCSW_Sig;
+	UINT32 mCSW_Tag;
+	UINT32 mCSW_Residue;									/* Return: Remaining data length */
+	UINT8  mCSW_Status;										/* Return: command execution result status */
+} BULK_ONLY_CMD_CSW;										/* Command status block of BulkOnly protocol, output CSW structure
 
 
 /******************************************************************************/
@@ -75,6 +93,7 @@ extern UINT8 MS_U30HOST_CofDescrAnalyse( UINT8 *pbuf );
 extern UINT8 MS_Init(  UINT8 *pbuf );
 extern UINT8 MS_ReadSector( UINT32 StartLba, UINT16 SectCount, PUINT8 DataBuf );
 extern UINT8 MS_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf );
+extern UINT8 AA_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf );
 
 
 extern UINT8 CHRV3BulkOnlyCmd( UINT8 *DataBuf );

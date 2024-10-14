@@ -390,14 +390,18 @@ UINT16 MY_USB30H_IN_Data(UINT8 seq_num, PUINT8 packet_num, UINT8 endp_num)
 *         - 3: STALL (Endpoint stalled).
 *         - 4: Error occurred.
 */
-UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32 tx_len)
+inline UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32 tx_len)
 {
    UINT32 control_word;
    UINT32 timeout = 20000; // Timeout counter
    UINT32 status;
 
+   R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff) | 0x02;
+
    // Set endpoint to host status
    USBSSH->HOST_STATUS = endp_num;
+
+   R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
 
    // Construct the control word for UH_TX_CTRL
    control_word = (seq_num << 21) | (packet_num << 16) | UH_RTX_VALID | tx_len;
@@ -405,9 +409,12 @@ UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32
    // Initiate the OUT transfer by writing to UH_TX_CTRL
    USBSSH->UH_TX_CTRL = control_word;
 
+   R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
+
    // Wait for the transfer to complete or timeout
    while ((USBSSH->USB_STATUS & USB_ACT_FLAG) == 0)
    {
+	   R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
        if (--timeout == 0)
        {
            // Timeout occurred
@@ -415,6 +422,8 @@ UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32
            return 0; // Indicate timeout
        }
    }
+
+   R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
 
    // Check for errors in USB_STATUS register
    UINT32 error_status = USBSSH->USB_STATUS & USB_INT_RES_MASK;
@@ -425,6 +434,7 @@ UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32
        status = USBSSH->USB_STATUS >> 5;
        USBSSH->UH_TX_CTRL = 0;
        USBSSH->USB_STATUS = USB_ACT_FLAG | USB_ERDY_FLAG; // Clear status bits
+       R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
        return (status & 0xF8) | 1; // Return ACK status
    }
    else if (error_status == USB_RES_NRDY)
@@ -432,6 +442,7 @@ UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32
        // NRDY received
        USBSSH->UH_TX_CTRL = 0;
        USBSSH->USB_STATUS = USB_ACT_FLAG; // Clear status bits
+       R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
        return 2; // Return NRDY status
    }
    else if (error_status == USB_RES_STALL)
@@ -439,6 +450,7 @@ UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32
        // STALL received
        USBSSH->USB_STATUS = USB_ACT_FLAG; // Clear status bits
        USBSSH->UH_TX_CTRL = 0;
+       R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
        return 3; // Return STALL status
    }
    else
@@ -446,6 +458,7 @@ UINT8 MY_USB30H_OUT_Data(UINT8 seq_num, UINT8 packet_num, UINT8 endp_num, UINT32
        // Other errors
        USBSSH->USB_STATUS = USB_ACT_FLAG; // Clear status bits
        USBSSH->UH_TX_CTRL = 0;
+       R32_PB_OUT = (R32_PB_OUT & 0xffff0000) | (USBSSH->USB_STATUS & 0x0000ffff);
        return 4; // Return error status
    }
 }
