@@ -146,14 +146,16 @@ int main( void )
         	   printf("MS_ReadSector=%02x (%s)\n", s, pDataBuf);
 
 
-        	   StartLba = 200000000;
-        	   SectCount = 8;
+        	   StartLba = 300000000;
+        	   SectCount = 32;
 #if 1
-        	   for (int c = 256; c < 16384; c++)
+        	   for (int c = 16; c < 16384; c++)
         	   {
         		   pDataBuf[c] = /*255 -*/ (c % 256);
+        		   pDataBuf[c] = pDataBuf[c-16];
         	   }
 #endif
+
         	   R32_TMR1_CNT_END = 0xffffffff;
         	   R8_TMR1_CTRL_MOD = RB_TMR_ALL_CLEAR;
         	   R8_TMR1_CTRL_MOD = RB_TMR_COUNT_EN | RB_TMR_CAP_COUNT;

@@ -388,7 +388,7 @@ UINT8 MS_U30HOST_BulkOutHandle( UINT8 *pDatBuf, UINT32 *pSize )
 
 		do
 		{
-		    count = USB30HOST_OUTTransaction(gDiskBulkOutTog , 1 , gDiskBulkOutEp,len);
+		    count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, len);
             if( timeoutcount >= 10000)
             {
                 return USB_CH56XUSBTIMEOUT;
@@ -1004,10 +1004,8 @@ UINT8 AA_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
 	UINT8  err;
 	UINT32 len;
 	UINT8 status;
-
-#ifdef  MY_DEBUG_PRINTF
-	printf( "AA_WriteSector:...\n" );
-#endif
+	UINT8 count = 0;
+    UINT32 timeoutcount = 0;
 
 	if (gDeviceUsbType != USB_U30_SPEED)
 	{
@@ -1016,12 +1014,6 @@ UINT8 AA_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
 	}
 
 	len = SectCount * gDiskPerSecSize;		  									/* Calculate total read length*/
-#if 0
-	if( len > DEFAULT_MAX_OPERATE_SIZE )
-	{
-		return( USB_PARAMETER_ERROR );
-	}
-#endif
 
 	for( err = 0; err < 3; err++ )
 	{
@@ -1041,19 +1033,25 @@ UINT8 AA_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
 		mCBW.mCBW_Sig = USB_BO_CBW_SIG;
 		mCBW.mCBW_Tag = 0x05630563;
 		mCBW.mCBW_LUN = gDiskCurLun;			   							    /* Operation current logical unit number */
-		len = USB_BO_CBW_SIZE;
 
-		USBSSH->UH_TX_DMA = (UINT32)endpTXbuff;
-		status = MS_U30HOST_BulkOutHandle( (UINT8 *)&mCBW, &len );
+		USBSSH->UH_TX_DMA = (UINT32V) ( (UINT8*)&mCBW );
+
+		do
+		{
+		    count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, USB_BO_CBW_SIZE);
+            if( timeoutcount >= 10000)
+            {
+                return USB_CH56XUSBTIMEOUT;
+            }
+            timeoutcount ++;
+        }
+		while (count);
+
+		gDiskBulkOutTog++;
+		status = USB_INT_SUCCESS;
+		mDelayuS(1);
 
 		ADD_INSTR_EVENT(EVENT_TYPE_3);
-
-//		USBSSH->UH_TX_DMA = (UINT32)((UINT8 *)&mBOC.mCBW);
-//		count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, USB_BO_CBW_SIZE);
-//		USBSSH->UH_TX_DMA = (UINT32)endpTXbuff;
-//		status = USB_INT_SUCCESS;
-
-		mDelayuS(1);
 
 		if (status == USB_INT_SUCCESS)
 		{
