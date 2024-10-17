@@ -997,159 +997,244 @@ UINT8 MS_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
 * Output         : None
 * Return         : None
 *******************************************************************************/
-UINT8 AA_WriteSector( UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf )
+UINT8 AA_WriteSector(UINT32 StartLba, UINT8 SectCount, PUINT8 DataBuf)
 {
-	ADD_INSTR_EVENT(EVENT_TYPE_2);
+    UINT32 tx_len, timeoutcount;
+    UINT32 remaining_len;  // Total remaining length in bytes to be sent
+    UINT8 retry_count, max_retries = 3;
 
-	UINT8  err;
-	UINT32 len;
-	UINT8 status;
-	UINT8 count = 0;
-    UINT32 timeoutcount = 0;
+//    ADD_INSTR_EVENT(EVENT_TYPE_2);  // Log the successful event
 
-	if (gDeviceUsbType != USB_U30_SPEED)
-	{
-		// Fall back to original version MS_WriteSector
-		return MS_WriteSector(StartLba, SectCount, DataBuf);
-	}
+    // Check if we're operating at USB3.0 speed, else fallback to the original function.
+    if (gDeviceUsbType != USB_U30_SPEED)
+    {
+        return MS_WriteSector(StartLba, SectCount, DataBuf);
+    }
 
-	len = SectCount * gDiskPerSecSize;		  									/* Calculate total read length*/
+    // Calculate total length of data to be transferred in bytes.
+    remaining_len = SectCount * gDiskPerSecSize;
 
-	for( err = 0; err < 3; err++ )
-	{
-		mCBW.mCBW_DataLen = len;
-		mCBW.mCBW_Flag = 0x00;
-		mCBW.mCBW_CB_Len = 10;
-		mCBW.mCBW_CB_Buf[ 0 ] = 0x2A;
-		mCBW.mCBW_CB_Buf[ 1 ] = 0x00;
-		mCBW.mCBW_CB_Buf[ 2 ] = (UINT8)( StartLba >> 24 );
-		mCBW.mCBW_CB_Buf[ 3 ] = (UINT8)( StartLba >> 16 );
-		mCBW.mCBW_CB_Buf[ 4 ] = (UINT8)( StartLba >> 8 );
-		mCBW.mCBW_CB_Buf[ 5 ] = (UINT8)( StartLba );
-		mCBW.mCBW_CB_Buf[ 6 ] = 0x00;
-		mCBW.mCBW_CB_Buf[ 7 ] = 0x00;
-		mCBW.mCBW_CB_Buf[ 8 ] = SectCount;
-		mCBW.mCBW_CB_Buf[ 9 ] = 0x00;
-		mCBW.mCBW_Sig = USB_BO_CBW_SIG;
-		mCBW.mCBW_Tag = 0x05630563;
-		mCBW.mCBW_LUN = gDiskCurLun;			   							    /* Operation current logical unit number */
+    // Prepare CBW (Command Block Wrapper) for the write operation.
+    mCBW.mCBW_DataLen = remaining_len;
+    mCBW.mCBW_Flag = 0x00;  // OUT transfer
+    mCBW.mCBW_CB_Len = 10;
+    mCBW.mCBW_CB_Buf[0] = 0x2A;  // WRITE(10) SCSI command
+    mCBW.mCBW_CB_Buf[1] = 0x00;
+    mCBW.mCBW_CB_Buf[2] = (UINT8)(StartLba >> 24);
+    mCBW.mCBW_CB_Buf[3] = (UINT8)(StartLba >> 16);
+    mCBW.mCBW_CB_Buf[4] = (UINT8)(StartLba >> 8);
+    mCBW.mCBW_CB_Buf[5] = (UINT8)(StartLba);
+    mCBW.mCBW_CB_Buf[6] = 0x00;
+    mCBW.mCBW_CB_Buf[7] = 0x00;
+    mCBW.mCBW_CB_Buf[8] = SectCount;
+    mCBW.mCBW_CB_Buf[9] = 0x00;
+    mCBW.mCBW_Sig = USB_BO_CBW_SIG;
+    mCBW.mCBW_Tag = 0x05630563;
+    mCBW.mCBW_LUN = gDiskCurLun;
 
-		USBSSH->UH_TX_DMA = (UINT32V) ( (UINT8*)&mCBW );
+    // Retry mechanism for CBW transmission
+    retry_count = 0;
+    while(1)
+    {
+        // Send the CBW using hardware DMA.
+        USBSSH->UH_TX_DMA = (UINT32V) &mCBW;
 
-		do
-		{
-		    count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, USB_BO_CBW_SIZE);
-            if( timeoutcount >= 10000)
+        // Initiate OUT transaction to send CBW.
+        USBSSH->HOST_STATUS = gDiskBulkOutEp;
+        USBSSH->UH_TX_CTRL = (gDiskBulkOutTog << 21) | (1 << 16) | UH_RTX_VALID | USB_BO_CBW_SIZE;
+
+        // Wait for the transaction to complete or timeout.
+        timeoutcount = 0;
+        while ((USBSSH->USB_STATUS & USB_ACT_FLAG) == 0)
+        {
+            if (++timeoutcount > 10000)
             {
-                return USB_CH56XUSBTIMEOUT;
+                USBSSH->UH_TX_CTRL = 0;
+                continue;  // Retry the CBW transmission on timeout.
             }
-            timeoutcount ++;
         }
-		while (count);
 
-		gDiskBulkOutTog++;
-		status = USB_INT_SUCCESS;
-		mDelayuS(1);
+        // Check the result of the transmission.
+        UINT32 usb_status = USBSSH->USB_STATUS & USB_INT_RES_MASK;
+        if (usb_status == USB_RES_ACK)
+        {
+            // Transaction successful.
+            break;
+        }
+        else if (usb_status == USB_RES_NRDY)
+        {
+            // Device not ready, retry.
+        }
+        else if (usb_status == USB_RES_STALL)
+        {
+            // STALL received, clear the stall and retry.
+            USB30HOST_ClearEndpStall(gDiskBulkOutEp);
+        }
+        else
+        {
+            // Any other error, retry.
+        }
 
-		ADD_INSTR_EVENT(EVENT_TYPE_3);
+        USBSSH->UH_TX_CTRL = 0;
+        USBSSH->USB_STATUS = USB_ACT_FLAG | USB_ERDY_FLAG;
 
-		if (status == USB_INT_SUCCESS)
-		{
-			len = mCBW.mCBW_DataLen;
-			status = MS_U30HOST_BulkOutHandle( DataBuf, &len );
+        retry_count++;
+        printf("Retrying CBW\n");
 
-			ADD_INSTR_EVENT(EVENT_TYPE_4);
+        if (retry_count == max_retries)
+        {
+            return USB_INT_DISK_ERR;  // Failed after max retries.
+        }
+    }
 
-//			mDelayuS(1);
+    // Clear transaction flags and increment toggle for the next transaction.
+    USBSSH->UH_TX_CTRL = 0;
+    USBSSH->USB_STATUS = USB_ACT_FLAG | USB_ERDY_FLAG;
+    gDiskBulkOutTog++;
 
-			if (status == USB_INT_SUCCESS)
-			{
-				len = 0;
-			    status = MS_U30HOST_BulkInHandle( (UINT8 *)&mCSW, &len );
+    mDelayuS(2);
 
-//				mDelayuS(1);
+//    ADD_INSTR_EVENT(EVENT_TYPE_3);  // Log the successful event
 
-#ifdef  MY_DEBUG_PRINTF
-				UINT8* p = (UINT8 *)&mCSW;
-				for( i=0;i!=len;i++ ){
-					printf("%02x ",*p++);
-				}
-				printf("len=%d\n",len);
-#endif
+    // Begin the actual data transfer in blocks, respecting U30_MAX_PACKSIZE.
+    while (remaining_len > 0)
+    {
+        // If remaining length is larger than U30_MAX_PACKSIZE, send a full packet size.
+        if (remaining_len >= U30_MAX_PACKSIZE)
+        {
+            tx_len = U30_MAX_PACKSIZE;
+        }
+        else
+        {
+            tx_len = remaining_len;  // Send the remaining data if smaller than max packet size.
+        }
 
-				if( status == USB_INT_SUCCESS )
-				{
-					if( len != USB_BO_CSW_SIZE )	/* Judge whether the length is 13 bytes */
-					{
-						return( USB_INT_DISK_ERR );
-					}
-					if (mCSW.mCSW_Sig != USB_BO_CSW_SIG)
-					{
-						return( USB_INT_DISK_ERR );
-					}
-					if( mCSW.mCSW_Status == 0 )
-					{
-						ADD_INSTR_EVENT(EVENT_TYPE_5);
-						return( USB_OPERATE_SUCCESS );
-					}
-					else if( mCSW.mCSW_Status >= 2 )
-					{
-						return( USB_INT_DISK_ERR );
-					}
-					else
-					{
-						return( USB_INT_DISK_ERR1 );  										/* Disk operation error */
-					}
-				}
-				else if( status == USB_INT_DISCONNECT )
-				{
-					return( status );
-				}
-				else
-				{
-					/* Judge which step is wrong */
-					if( (status == USB_INT_DISK_ERR))
-					{
-						status = USB30HOST_ClearEndpStall( 0x80 | gDiskBulkInEp );
-						gDiskBulkInTog = 0;
+        // Retry mechanism for data transfer.
+        retry_count = 0;
+        while(1)
+        {
+            // Prepare DMA for data transfer.
+            USBSSH->UH_TX_DMA = (UINT32V) DataBuf;
 
-						if( status == USB_INT_DISCONNECT )
-						{
-							return( status );
-						}
-					}
-					return status;
-				}
+            // Initiate OUT transaction to send data.
+            USBSSH->HOST_STATUS = gDiskBulkOutEp;
+            USBSSH->UH_TX_CTRL = (gDiskBulkOutTog << 21) | (1 << 16) | UH_RTX_VALID | tx_len;
 
-				status = USB_OPERATE_SUCCESS;
-				return( status );
-			}
+            // Wait for transfer completion or timeout.
+            timeoutcount = 0;
+            while ((USBSSH->USB_STATUS & USB_ACT_FLAG) == 0)
+            {
+                if (++timeoutcount > 10000)
+                {
+                    USBSSH->UH_TX_CTRL = 0;
 
-//			USBSSH->UH_TX_DMA = (UINT32)DataBuf;
-//		    count = USB30HOST_OUTTransaction(gDiskBulkOutTog, 1, gDiskBulkOutEp, len);
-//			USBSSH->UH_TX_DMA = (UINT32)endpTXbuff;
+                    goto send_retry;
+                }
+            }
 
-		}
+            // Check the result of the transaction.
+            UINT32 usb_status = USBSSH->USB_STATUS & USB_INT_RES_MASK;
+            if (usb_status == USB_RES_ACK)
+            {
+                // Transfer successful.
+                remaining_len -= tx_len;
+                DataBuf += tx_len;
+                break;
+            }
+            else if (usb_status == USB_RES_STALL)
+            {
+                // STALL received, clear the stall and retry.
+                USB30HOST_ClearEndpStall(gDiskBulkOutEp);
+                USBSSH->UH_TX_CTRL = 0;
+                USBSSH->USB_STATUS = USB_ACT_FLAG | USB_ERDY_FLAG;
+            }
+            else
+            {
+                // Any other error, retry.
+                USBSSH->UH_TX_CTRL = 0;
+                USBSSH->USB_STATUS = USB_ACT_FLAG | USB_ERDY_FLAG;
+            }
 
-		if( status == USB_INT_DISK_ERR )
-		{
-			status = USB30HOST_ClearEndpStall( gDiskBulkOutEp );
-		}
+ send_retry:
 
-		if( status == USB_INT_DISCONNECT || status == USB_INT_CONNECT )
-		{
-			return( status );
-		}
+            retry_count++;
 
-		status = MS_RequestSense( DataBuf );
-		if( status == USB_INT_DISCONNECT || status == USB_INT_CONNECT  )
-		{
-			return( status );
-		}
+            if (retry_count == max_retries)
+            {
+                return USB_INT_DISK_ERR;  // Failed after max retries.
+            }
+        }
 
-		printf("Retry write...\n");
-	}
-	return status;
+        // Clear transaction flags.
+        USBSSH->UH_TX_CTRL = 0;
+        USBSSH->USB_STATUS = USB_ACT_FLAG | USB_ERDY_FLAG;
+
+        // Increment sequence number for the next transaction.
+        gDiskBulkOutTog++;
+    }
+
+//    ADD_INSTR_EVENT(EVENT_TYPE_4);  // Log the successful event
+
+    // Receive CSW (Command Status Wrapper) after data transfer is complete.
+    UINT16 status = 0;
+    UINT32 len = 0;  // Initialize length for CSW
+    for (retry_count = 0; retry_count < max_retries; retry_count++)
+    {
+        status = MS_U30HOST_BulkInHandle((UINT8 *)&mCSW, &len);  // Retrieve the CSW using BulkInHandle
+
+        if (status == USB_INT_SUCCESS)
+        {
+            // Check if the CSW length is correct (should be 13 bytes)
+            if (len != USB_BO_CSW_SIZE)
+            {
+                return USB_INT_DISK_ERR;  // Incorrect CSW length
+            }
+
+            // Check if the CSW signature is valid
+            if (mCSW.mCSW_Sig != USB_BO_CSW_SIG)
+            {
+                return USB_INT_DISK_ERR;  // Invalid CSW signature
+            }
+
+            // Check the status field in the CSW
+            if (mCSW.mCSW_Status == 0)
+            {
+//                ADD_INSTR_EVENT(EVENT_TYPE_5);  // Log the successful event
+                return USB_OPERATE_SUCCESS;     // Success, operation completed
+            }
+            else if (mCSW.mCSW_Status >= 2)
+            {
+                return USB_INT_DISK_ERR;  // Disk error, as per CSW status
+            }
+            else
+            {
+                return USB_INT_DISK_ERR1;  // General disk operation error
+            }
+        }
+        else if (status == USB_INT_DISCONNECT)
+        {
+            return status;  // Device disconnected, return the disconnect status
+        }
+        else
+        {
+            // Handle the case where CSW reception failed, retry on error
+            if (status == USB_INT_DISK_ERR)
+            {
+                // Clear the stall on the Bulk IN endpoint and reset the toggle
+                status = USB30HOST_ClearEndpStall(0x80 | gDiskBulkInEp);
+                gDiskBulkInTog = 0;
+
+                if (status == USB_INT_DISCONNECT)
+                {
+                    return status;  // If device disconnected, return the status
+                }
+            }
+            // Continue retrying if maximum retries are not reached
+        }
+        printf("Retry CSW\n");
+    }
+
+    return USB_INT_DISK_ERR;  // Failed after max retries.
 }
 
 
